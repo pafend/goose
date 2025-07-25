@@ -120,26 +120,30 @@ jobs:
         cache: 'npm'
         cache-dependency-path: ui/desktop/package-lock.json
 
-    - name: Install dependencies
-      run: just install-deps
+    - name: Install UI dependencies
+      run: npm install
+      working-directory: ui/desktop
 
     - name: Build Desktop App (Windows)
       if: matrix.os == 'windows-latest'
       run: |
         just release-windows
-        just make-ui-windows
+        cd ui/desktop
+        npm run bundle:windows
 
     - name: Build Desktop App (Mac)
       if: matrix.os == 'macos-latest' && matrix.script == 'make-ui'
       run: |
-        just release-binary
-        just make-ui
+        cargo build --release
+        cd ui/desktop
+        npm run bundle:default
 
     - name: Build Desktop App (Mac Intel)
       if: matrix.os == 'macos-latest' && matrix.script == 'make-ui-intel'
       run: |
-        just release-intel
-        just make-ui-intel
+        cargo build --release --target x86_64-apple-darwin
+        cd ui/desktop
+        npm run bundle:intel
 
     - name: Upload Desktop artifact
       uses: actions/upload-artifact@v4
