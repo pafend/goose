@@ -1,0 +1,206 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ main, feature/* ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-cli:
+    name: Build CLI
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            name: goose-linux-x64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            name: goose-windows-x64
+            extension: .exe
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            name: goose-macos-x64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            name: goose-macos-arm64
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ matrix.target }}
+
+    - name: Cache Cargo
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-${{ matrix.target }}-
+          ${{ runner.os }}-cargo-
+
+    - name: Install Just
+      uses: extractions/setup-just@v1
+
+    - name: Build CLI
+      run: cargo build --release --target ${{ matrix.target }} -p goose-cli
+
+    - name: Create artifact directory
+      run: mkdir -p artifacts
+
+    - name: Copy binary (Unix)
+      if: matrix.os != 'windows-latest'
+      run: |
+        cp target/${{ matrix.target }}/release/goose artifacts/goose
+        chmod +x artifacts/goose
+
+    - name: Copy binary (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        copy target\${{ matrix.target }}\release\goose.exe artifacts\goose.exe
+
+    - name: Upload CLI artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.name }}-cli
+        path: artifacts/
+        retention-days: 30
+
+  build-desktop:
+    name: Build Desktop App
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            name: goose-desktop-windows
+            script: make-ui-windows
+          - os: macos-latest
+            name: goose-desktop-macos
+            script: make-ui
+          - os: macos-latest
+            name: goose-desktop-macos-intel
+            script: make-ui-intel
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache Cargo
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-desktop-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Install Just
+      uses: extractions/setup-just@v1
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: ui/desktop/package-lock.json
+
+    - name: Install dependencies
+      run: just install-deps
+
+    - name: Build Desktop App (Windows)
+      if: matrix.os == 'windows-latest'
+      run: |
+        just release-windows
+        just make-ui-windows
+
+    - name: Build Desktop App (Mac)
+      if: matrix.os == 'macos-latest' && matrix.script == 'make-ui'
+      run: |
+        just release-binary
+        just make-ui
+
+    - name: Build Desktop App (Mac Intel)
+      if: matrix.os == 'macos-latest' && matrix.script == 'make-ui-intel'
+      run: |
+        just release-intel
+        just make-ui-intel
+
+    - name: Upload Desktop artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.name }}
+        path: ui/desktop/out/
+        retention-days: 30
+
+  create-release:
+    name: Create Release
+    needs: [build-cli, build-desktop]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: ./artifacts
+
+    - name: Display structure of downloaded files
+      run: ls -la ./artifacts
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        draft: false
+        prerelease: ${{ contains(github.ref, '-') }}
+        generate_release_notes: true
+        files: |
+          ./artifacts/**/*
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  test-build:
+    name: Test Build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache Cargo
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: test-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Run tests
+      run: cargo test --workspace
+
+    - name: Check code formatting
+      run: cargo fmt --all -- --check
+
+    - name: Run clippy
+      run: cargo clippy --workspace --all-targets --all-features -- -D warnings
