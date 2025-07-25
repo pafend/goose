@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use super::base::{ConfigKey, Provider, ProviderMetadata, ProviderUsage, Usage};
 use super::errors::ProviderError;
+use super::rate_limiter::{RateLimiter, RequestThrottler};
 use super::utils::{
     emit_debug_trace, get_model, handle_response_google_compat, handle_response_openai_compat,
     is_google_model,
@@ -36,6 +37,10 @@ pub struct OpenRouterProvider {
     host: String,
     api_key: String,
     model: ModelConfig,
+    #[serde(skip)]
+    rate_limiter: RateLimiter,
+    #[serde(skip)]
+    throttler: RequestThrottler,
 }
 
 impl Default for OpenRouterProvider {
@@ -57,15 +62,35 @@ impl OpenRouterProvider {
             .timeout(Duration::from_secs(600))
             .build()?;
 
+        // Determine if this is a free tier model based on model name
+        let is_free_tier = model.model_name.contains(":free");
+        
+        let rate_limiter = if is_free_tier {
+            RateLimiter::for_free_tier()
+        } else {
+            RateLimiter::for_paid_tier()
+        };
+        
+        let throttler = if is_free_tier {
+            RequestThrottler::for_free_tier()
+        } else {
+            RequestThrottler::for_paid_tier()
+        };
+
         Ok(Self {
             client,
             host,
             api_key,
             model,
+            rate_limiter,
+            throttler,
         })
     }
 
     async fn post(&self, payload: &Value) -> Result<Value, ProviderError> {
+        // Apply request throttling before making the request
+        self.throttler.throttle().await;
+        
         let base_url = Url::parse(&self.host)
             .map_err(|e| ProviderError::RequestFailed(format!("Invalid base URL: {e}")))?;
         let url = base_url.join("api/v1/chat/completions").map_err(|e| {
@@ -258,8 +283,11 @@ impl Provider for OpenRouterProvider {
         // Create the base payload
         let payload = create_request_based_on_model(self, system, messages, tools)?;
 
-        // Make request
-        let response = self.post(&payload).await?;
+        // Make request with retry logic for rate limits
+        let response = self.rate_limiter.execute_with_retry(
+            || self.post(&payload),
+            |error: &ProviderError| matches!(error, ProviderError::RateLimitExceeded(_))
+        ).await?;
 
         // Parse response
         let message = response_to_message(&response)?;

@@ -33,6 +33,7 @@ ui/desktop/src/bin/goose_llm.dll
 
 # Claude
 .claude
+CLAUDE.md
 
 debug_*.txt
 
