@@ -127,7 +127,11 @@ jobs:
     - name: Build Desktop App (Windows)
       if: matrix.os == 'windows-latest'
       run: |
-        just release-windows
+        cargo build --release --target x86_64-pc-windows-msvc
+        # Copy binaries to the expected location
+        mkdir -p ui/desktop/src/bin
+        copy target\x86_64-pc-windows-msvc\release\goose.exe ui\desktop\src\bin\
+        copy target\x86_64-pc-windows-msvc\release\goosed.exe ui\desktop\src\bin\
         cd ui/desktop
         npm run bundle:windows
 
@@ -135,6 +139,10 @@ jobs:
       if: matrix.os == 'macos-latest' && matrix.script == 'make-ui'
       run: |
         cargo build --release
+        # Copy binaries to the expected location
+        mkdir -p ui/desktop/src/bin
+        copy target\x86_64-pc-windows-msvc\release\goose.exe ui\desktop\src\bin\
+        copy target\x86_64-pc-windows-msvc\release\goosed.exe ui\desktop\src\bin\
         cd ui/desktop
         npm run bundle:default
 
@@ -142,6 +150,10 @@ jobs:
       if: matrix.os == 'macos-latest' && matrix.script == 'make-ui-intel'
       run: |
         cargo build --release --target x86_64-apple-darwin
+        # Copy binaries to the expected location
+        mkdir -p ui/desktop/src/bin
+        copy target\x86_64-pc-windows-msvc\release\goose.exe ui\desktop\src\bin\
+        copy target\x86_64-pc-windows-msvc\release\goosed.exe ui\desktop\src\bin\
         cd ui/desktop
         npm run bundle:intel
 
