@@ -53,7 +53,6 @@ nanoid = "0.4"
 sha2 = "0.10"
 base64 = "0.21"
 url = "2.5"
-urlencoding = "2.1"
 axum = "0.8.1"
 webbrowser = "0.8"
 lazy_static = "1.5.0"
@@ -67,6 +66,7 @@ rand = "0.8.5"
 fastrand = "2.0"
 utoipa = { version = "4.1", features = ["chrono"] }
 tokio-cron-scheduler = "0.14.0"
+urlencoding = "2.1"
 
 # For Bedrock provider
 aws-config = { version = "1.5.16", features = ["behavior-version-latest"] }
@@ -82,6 +82,7 @@ jsonwebtoken = "9.3.1"
 blake3 = "1.5"
 fs2 = "0.4.3"
 tokio-stream = "0.1.17"
+tempfile = "3.15.0"
 dashmap = "6.1"
 ahash = "0.8"
 tokio-util = "0.7.15"
@@ -95,7 +96,6 @@ winapi = { version = "0.3", features = ["wincred"] }
 
 [dev-dependencies]
 criterion = "0.5"
-tempfile = "3.15.0"
 serial_test = "3.2.0"
 mockall = "0.13.1"
 wiremock = "0.6.0"
